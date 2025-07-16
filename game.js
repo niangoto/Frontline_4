@@ -1003,159 +1003,61 @@ function pointInPolygon(point, polygon) {
     
     return inside;
 }
-
-// --- MOBILE FRIENDLY: Add viewport meta if not present ---
-(function ensureMobileViewport() {
-    if (!document.querySelector('meta[name="viewport"]')) {
-        const meta = document.createElement('meta');
-        meta.name = "viewport";
-        meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no";
-        document.head.appendChild(meta);
-    }
-})();
-
-// --- MOBILE FRIENDLY: Add basic responsive CSS ---
-(function ensureMobileCSS() {
-    const style = document.createElement('style');
-    style.textContent = `
-        html, body {
-            touch-action: none;
-            overscroll-behavior: contain;
-            margin: 0; padding: 0; height: 100%; width: 100vw; box-sizing: border-box;
-        }
-        #game-canvas {
-            width: 100vw !important;
-            height: 60vw !important;
-            max-width: 100vw;
-            max-height: 80vh;
-            display: block;
-            touch-action: none;
-            background: #f0f0f0;
-        }
-        #game-info, #ready-btn, #settings-modal {
-            font-size: 1.1em;
-            max-width: 100vw;
-            word-break: break-word;
-        }
-        #settings-modal {
-            width: 95vw;
-            left: 2vw;
-            right: 2vw;
-        }
-        button, input, select {
-            font-size: 1.1em;
-        }
-    `;
-    document.head.appendChild(style);
-})();
-
-// --- MOBILE FRIENDLY: Touch support for canvas ---
-// Tap = left click, long tap = right click, drag = pan, pinch = zoom
-(function enableMobileCanvas() {
-    let lastTouch = null;
-    let touchStartTime = 0;
-    let longTapTimeout = null;
-    let pinchStartDist = null;
-    let pinchStartScale = null;
-    let pinchStartOffset = null;
-
-    function getTouchPos(e) {
-        const rect = canvas.getBoundingClientRect();
-        if (e.touches && e.touches.length > 0) {
-            return [
-                (e.touches[0].clientX - rect.left),
-                (e.touches[0].clientY - rect.top)
-            ];
-        }
-        return [0, 0];
-    }
-
-    canvas.addEventListener('touchstart', function(e) {
-        if (e.touches.length === 1) {
-            lastTouch = getTouchPos(e);
-            touchStartTime = Date.now();
-            // Long tap for right click
-            longTapTimeout = setTimeout(() => {
-                const evt = new MouseEvent('mousedown', {
-                    clientX: e.touches[0].clientX,
-                    clientY: e.touches[0].clientY,
-                    button: 2
-                });
-                canvas.dispatchEvent(evt);
-                longTapTimeout = null;
-            }, 500);
-        } else if (e.touches.length === 2) {
-            // Pinch start
-            pinchStartDist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
-            pinchStartScale = window.view ? window.view.scale : 1;
-            pinchStartOffset = window.view ? [window.view.offsetX, window.view.offsetY] : [0, 0];
-            if (longTapTimeout) clearTimeout(longTapTimeout);
-        }
-    }, { passive: false });
-
-    canvas.addEventListener('touchmove', function(e) {
-        if (e.touches.length === 1 && lastTouch) {
-            // Drag to pan
-            if (window.view) {
-                let dx = e.touches[0].clientX - (lastTouch[0] + canvas.getBoundingClientRect().left);
-                let dy = e.touches[0].clientY - (lastTouch[1] + canvas.getBoundingClientRect().top);
-                window.view.offsetX += dx;
-                window.view.offsetY += dy;
-                lastTouch = getTouchPos(e);
-            }
-            if (longTapTimeout) clearTimeout(longTapTimeout);
-            e.preventDefault();
-        } else if (e.touches.length === 2 && pinchStartDist && window.view) {
-            // Pinch to zoom
-            let dist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
-            let scale = pinchStartScale * (dist / pinchStartDist);
-            scale = Math.max(window.view.minScale || 1, Math.min(window.view.maxScale || 4, scale));
-            window.view.scale = scale;
-            // Optionally, keep center under fingers
-            window.view.offsetX = pinchStartOffset[0];
-            window.view.offsetY = pinchStartOffset[1];
-            e.preventDefault();
-        }
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', function(e) {
-        if (longTapTimeout) {
-            clearTimeout(longTapTimeout);
-            longTapTimeout = null;
-        }
-        if (e.touches.length === 0 && lastTouch) {
-            // Tap = left click
-            if (Date.now() - touchStartTime < 400) {
-                const evt = new MouseEvent('mousedown', {
-                    clientX: lastTouch[0] + canvas.getBoundingClientRect().left,
-                    clientY: lastTouch[1] + canvas.getBoundingClientRect().top,
-                    button: 0
-                });
-                canvas.dispatchEvent(evt);
-                setTimeout(() => {
-                    const upEvt = new MouseEvent('mouseup', {
-                        clientX: lastTouch[0] + canvas.getBoundingClientRect().left,
-                        clientY: lastTouch[1] + canvas.getBoundingClientRect().top,
-                        button: 0
-                    });
-                    canvas.dispatchEvent(upEvt);
-                }, 10);
-            }
-            lastTouch = null;
-        }
-        pinchStartDist = null;
-        pinchStartScale = null;
-        pinchStartOffset = null;
-    }, { passive: false });
-})();
-
 window.gameData = gameData;
 window.game = game;
 window.canvas = canvas;
 window.ctx = ctx;
+
+// Add touch event handlers
+canvas.addEventListener('touchstart', handleTouchStart, false);
+canvas.addEventListener('touchmove', handleTouchMove, false);
+canvas.addEventListener('touchend', handleTouchEnd, false);
+
+let touchStartX = 0;
+let touchStartY = 0;
+let isTouching = false;
+
+function handleTouchStart(event) {
+    event.preventDefault();
+    isTouching = true;
+    const touch = event.touches[0];
+    touchStartX = touch.clientX - canvas.offsetLeft;
+    touchStartY = touch.clientY - canvas.offsetTop;
+    
+    // Convert touch to click
+    const clickEvent = {
+        clientX: touchStartX,
+        clientY: touchStartY,
+        button: 0 // Left click
+    };
+    handleClick(clickEvent);
+}
+
+function handleTouchMove(event) {
+    event.preventDefault();
+    if (!isTouching) return;
+    
+    const touch = event.touches[0];
+    const currentX = touch.clientX - canvas.offsetLeft;
+    const currentY = touch.clientY - canvas.offsetTop;
+    
+    // Handle drag events if needed
+    if (gameData.selectedUnit) {
+        handleArrowDirection([currentX, currentY], 0);
+    }
+}
+
+function handleTouchEnd(event) {
+    event.preventDefault();
+    isTouching = false;
+}
+
+// Add scale factor for mobile screens
+function getUnitScale() {
+    // Get the smaller dimension to scale proportionally
+    const screenScale = Math.min(
+        canvas.width / 700,  // Original width
+        canvas.height / 600  // Original height
+    );
+    return Math.max(0.5, Math.min(1, screenScale));
+}
